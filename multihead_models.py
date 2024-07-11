@@ -193,6 +193,58 @@ def MOEModelForCausalLM(model, **kwargs):
                 attentions = transformer_outputs.attentions
             )
             
+        def debug_forward(self, input_ids = None, attention_mask = None, labels = None, **kwargs):
+            # input_ids, attention_mask, labels: batch x column x tokens
+            # print('labels', labels)
+            PAD = 50256
+            transformer, lm_head = self.children()
+            
+            loss = None
+            # print(input_ids, attention_mask, labels)
+            
+            prompt = deepcopy(input_ids) #bs x tokens
+                
+            mask = torch.ones_like(prompt)
+            
+            # print('prompt, mask', prompt, mask)
+                
+            # for i in range(self.num_experts):
+            self.col.value = 0
+            transformer_outputs = transformer(prompt, attention_mask=attention_mask, **kwargs)
+            hidden_states = transformer_outputs[0]
+            lm_logits = lm_head(hidden_states)
+            
+            # if prompt is None:
+            #     prompt = labels[0]
+            # else:
+            #     prompt = torch.cat([prompt, labels[i]])
+            
+            # print(labels.shape, lm_logits.shape)
+
+            
+            if labels is not None:
+                # print('calc loss')
+                # move labels to correct device to enable model parallelism
+                labels = labels.to(lm_logits.device)
+                # Shift so that tokens < n predict n
+                # print('prompt', prompt, prompt.shape, 
+                #       'logits', lm_logits.argmax(axis=-1), lm_logits.shape)
+                shift_logits = lm_logits[..., :-1, :].contiguous()
+                shift_labels = prompt[..., 1:].contiguous()
+                # print('shift_labels', shift_labels, shift_labels.shape, 
+                #       'shift_logits', shift_logits.argmax(axis=-1), shift_logits.shape)
+                # Flatten the tokens
+                loss_fct = CrossEntropyLoss()
+                loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+
+            return CausalLMOutputWithPast(
+                loss = loss,
+                logits = lm_logits,
+                past_key_values = transformer_outputs.past_key_values,
+                hidden_states = transformer_outputs.hidden_states,
+                attentions = transformer_outputs.attentions
+            )
+            
         
         def multicol_forward(self, input_ids = None, attention_mask = None, labels = None, **kwargs):
             # input_ids, attention_mask, labels: batch x column x tokens
