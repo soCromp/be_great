@@ -27,7 +27,7 @@ class MOEMLP(nn.Module):
         
         
     def forward(self, hidden_states):
-        # print(self.col.value)
+        # print('generate with mlp', self.col.value)
         return self.mlps[self.col.value](hidden_states)
 
 
@@ -114,6 +114,7 @@ def MOEModelForCausalLM(model, **kwargs):
         def __init__(self):
             super(MOEModelForCausalLM, self).__init__()
             self.col = Integer()
+            self.col.value = 0
             self.num_experts=1
             
         def from_other(model, num_experts=1):
@@ -140,105 +141,25 @@ def MOEModelForCausalLM(model, **kwargs):
             return moemodel
         
         def forward(self, input_ids = None, attention_mask = None, labels = None, **kwargs):
-            # input_ids, attention_mask, labels: batch x column x tokens
-            # print('labels', labels)
             PAD = 50256
+            EOS = 50258
             transformer, lm_head = self.children()
             
-            loss = None
-            # print(input_ids, attention_mask, labels)
-            
             prompt = deepcopy(input_ids) #bs x tokens
-            if labels is not None:
-                prompt = torch.cat([prompt[prompt!=PAD], labels[:,0,:][labels[:,0,:] != PAD].unsqueeze(0)], axis=1)
-                
             mask = torch.ones_like(prompt)
             
-            # print('prompt, mask', prompt, mask)
-                
-            # for i in range(self.num_experts):
-            self.col.value = 0
             transformer_outputs = transformer(prompt, attention_mask=mask, **kwargs)
             hidden_states = transformer_outputs[0]
             lm_logits = lm_head(hidden_states)
+                    
+            # print(lm_logits[:, -1].argmax().item())
+            if lm_logits[:, -1].argmax().item() == EOS and self.col.value < self.num_experts-1:
+                # print('to next col')
+                self.col.value +=1
             
-            # if prompt is None:
-            #     prompt = labels[0]
-            # else:
-            #     prompt = torch.cat([prompt, labels[i]])
             
-            # print(labels.shape, lm_logits.shape)
-
-            
-            if labels is not None:
-                # print('calc loss')
-                # move labels to correct device to enable model parallelism
-                # labels = labels[:,0,:].to(lm_logits.device)
-                # Shift so that tokens < n predict n
-                # print('prompt', prompt, prompt.shape, 
-                #       'logits', lm_logits.argmax(axis=-1), lm_logits.shape)
-                shift_logits = lm_logits[..., :-1, :].contiguous()
-                shift_labels = prompt[..., 1:].contiguous()
-                # print('shift_labels', shift_labels, shift_labels.shape, 
-                #       'shift_logits', shift_logits.argmax(axis=-1), shift_logits.shape)
-                # Flatten the tokens
-                loss_fct = CrossEntropyLoss()
-                loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-
             return CausalLMOutputWithPast(
-                loss = loss,
-                logits = lm_logits,
-                past_key_values = transformer_outputs.past_key_values,
-                hidden_states = transformer_outputs.hidden_states,
-                attentions = transformer_outputs.attentions
-            )
-            
-        def debug_forward(self, input_ids = None, attention_mask = None, labels = None, **kwargs):
-            # input_ids, attention_mask, labels: batch x column x tokens
-            # print('labels', labels)
-            PAD = 50256
-            transformer, lm_head = self.children()
-            
-            loss = None
-            # print(input_ids, attention_mask, labels)
-            
-            prompt = deepcopy(input_ids) #bs x tokens
-                
-            mask = torch.ones_like(prompt)
-            
-            # print('prompt, mask', prompt, mask)
-                
-            # for i in range(self.num_experts):
-            self.col.value = 0
-            transformer_outputs = transformer(prompt, attention_mask=attention_mask, **kwargs)
-            hidden_states = transformer_outputs[0]
-            lm_logits = lm_head(hidden_states)
-            
-            # if prompt is None:
-            #     prompt = labels[0]
-            # else:
-            #     prompt = torch.cat([prompt, labels[i]])
-            
-            # print(labels.shape, lm_logits.shape)
-
-            
-            if labels is not None:
-                # print('calc loss')
-                # move labels to correct device to enable model parallelism
-                labels = labels.to(lm_logits.device)
-                # Shift so that tokens < n predict n
-                # print('prompt', prompt, prompt.shape, 
-                #       'logits', lm_logits.argmax(axis=-1), lm_logits.shape)
-                shift_logits = lm_logits[..., :-1, :].contiguous()
-                shift_labels = prompt[..., 1:].contiguous()
-                # print('shift_labels', shift_labels, shift_labels.shape, 
-                #       'shift_logits', shift_logits.argmax(axis=-1), shift_logits.shape)
-                # Flatten the tokens
-                loss_fct = CrossEntropyLoss()
-                loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-
-            return CausalLMOutputWithPast(
-                loss = loss,
+                loss = None,
                 logits = lm_logits,
                 past_key_values = transformer_outputs.past_key_values,
                 hidden_states = transformer_outputs.hidden_states,
@@ -250,17 +171,22 @@ def MOEModelForCausalLM(model, **kwargs):
             # input_ids, attention_mask, labels: batch x column x tokens
             # print('labels', labels)
             PAD = 50256
+            EOS = 50258
             transformer, lm_head = self.children()
-            
-            loss = None
             
             prompt = deepcopy(input_ids) #bs x tokens
             if labels is not None:
-                prompt = torch.cat([prompt[prompt!=PAD], labels[:,0,:][labels[:,0,:] != PAD].unsqueeze(0)], axis=1)
-                
+                prompt = torch.cat([prompt[prompt!=PAD].unsqueeze(0), 
+                                    labels[:,0,:][labels[:,0,:] != PAD].unsqueeze(0)], axis=1)
+            # print('################### NEW PASS ###################')
+            # print(prompt)
+            
+            collosses = []
+            lossavg = None
+            # print(0, prompt)
             mask = torch.ones_like(prompt)
             for i in range(self.num_experts):
-                self.col.value = i 
+                self.col.value = i
                 transformer_outputs = transformer(prompt, attention_mask=mask, **kwargs)
                 hidden_states = transformer_outputs[0]
                 lm_logits = lm_head(hidden_states)
@@ -274,17 +200,31 @@ def MOEModelForCausalLM(model, **kwargs):
                     loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
                     collosses.append(loss)
                     
+                lossavg = sum(collosses) / len(collosses)
+                    
                 # update prompt and mask
                 if i < self.num_experts-1:
-                    prompt = torch.cat([prompt, labels[:,i+1,:][labels[:,i+1,:] != PAD].unsqueeze(0)], axis=1)
+                    if labels is not None: #in training mode, where labels are known
+                        prompt = torch.cat([prompt, labels[:,i+1,:][labels[:,i+1,:] != PAD].unsqueeze(0)], axis=1)
+                    else: # in inference mode, where a column's prompt is the preds from the prior columns
+                        predtoks = lm_logits.argmax(-1)
+                        wheredone = torch.where(predtoks == EOS)[-1] # places it predicts the EOS token
+                        if len(wheredone) == 0: #didn't find EOS in the predicted tokens
+                            eostoks = torch.full((prompt.shape[0],1), EOS) # add EOS at end of col since model didn't so itself
+                            prompt = torch.cat([prompt, predtoks, eostoks])
+                        else:
+                            doneind = wheredone[0].item() # first place it predicts to be done
+                            prompt = torch.cat([prompt, predtoks[:, :doneind+1]])
+                        
                     mask = torch.ones_like(prompt)
-
+                    
             return CausalLMOutputWithPast(
-                loss = loss,
+                loss = lossavg,
                 logits = lm_logits,
                 past_key_values = transformer_outputs.past_key_values,
                 hidden_states = transformer_outputs.hidden_states,
                 attentions = transformer_outputs.attentions
             )
+    
      
     return MOEModelForCausalLM.from_other(model, **kwargs)
