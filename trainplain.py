@@ -11,14 +11,13 @@ from torch.optim.lr_scheduler import LinearLR
 from matplotlib import pyplot as plt
 from tqdm import tqdm 
 import os
-os.makedirs('./ckpts/moe/dgpt2/adult-4col/jul16', exist_ok=True)
+
+outpath = './ckpts/moe/dgpt2/adult-allcol/jul21'
+os.makedirs(outpath, exist_ok=True)
 
 dgpt2 = transformers.AutoModelForCausalLM.from_pretrained('distilgpt2')
-num_experts = 4
+num_experts = 15
 dgpt2copy = MOEModelForCausalLM(dgpt2, num_experts=num_experts)
-
-
-
 model = dgpt2copy # don't forget to change tokenizer name and optimizer too
 
 model.train()
@@ -46,7 +45,7 @@ def row_to_col_sentences(row):
     return [str(col).strip() + " is " + str(val).strip() + '.<EOS>' for col, val in zip(row.index, row.values)]
 
 class TextDataset(Dataset):
-    def __init__(self, texts, tokenizer, cols, max_col_length=10, do_moe_format=True):
+    def __init__(self, texts, tokenizer, cols=None, max_col_length=10, do_moe_format=True):
         self.texts = texts
         self.tokenizer = tokenizer
         self.cols = cols # "None" for all cols, else a list of desired cols' names
@@ -73,7 +72,7 @@ class TextDataset(Dataset):
             
 
 text_data = data.apply(row_to_col_sentences, axis=1).tolist()
-dataset = TextDataset(text_data, tokenizer, ['age', 'workclass', 'fnlwgt', 'income'],)
+dataset = TextDataset(text_data, tokenizer, max_col_length=20)
 dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
 
 
@@ -101,19 +100,19 @@ for epoch in range(1):  # Train for 3 epochs
 
         lossesmoe.append(loss.item())
         if len(lossesmoe) % 1000 == 0:
-            torch.save(model.state_dict(), f'./ckpts/moe/dgpt2/adult-4col/jul16/{len(lossesmoe)}.pt')
+            torch.save(model.state_dict(), os.path.join(outpath, f'{len(lossesmoe)}.pt'))
             try:
                 plt.close()
             except:
                 pass
             plt.plot(lossesmoe)
-            plt.savefig(f'./ckpts/moe/dgpt2/adult-4col/jul16/loss.png')
+            plt.savefig(os.path.join(outpath, 'loss.png'))
 
 
 samples = []
 for i in tqdm(range(10000)):
-    samples.append(tokenizer.batch_decode(model.generate(do_sample=True, num_beams=1, max_length=30))[0])
+    samples.append(tokenizer.batch_decode(model.generate(do_sample=True, num_beams=1, max_length=140))[0])
     
-with open('./ckpts/moe/dgpt2/adult-4col/jul16/samples.txt', 'w') as f:
+with open(os.path.join(outpath, 'samples.txt', 'w')) as f:
     f.write('\n'.join(samples))
     
