@@ -113,6 +113,6 @@ samples = []
 for i in tqdm(range(10000)):
     samples.append(tokenizer.batch_decode(model.generate(do_sample=True, num_beams=1, max_length=140))[0])
     
-with open(os.path.join(outpath, 'samples.txt', 'w')) as f:
+with open(os.path.join(outpath, 'samples.txt'), 'w') as f:
     f.write('\n'.join(samples))
     
