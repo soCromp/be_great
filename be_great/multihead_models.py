@@ -27,7 +27,7 @@ class MOEMLP(nn.Module):
         
         
     def forward(self, hidden_states):
-        # print('generate with mlp', self.col.value)
+        print('generate with mlp', self.col.value)
         return self.mlps[self.col.value](hidden_states)
 
 
@@ -140,7 +140,16 @@ def MOEModelForCausalLM(model, **kwargs):
                 raise NotImplementedError(f'Type {type(model)} not supported')
             return moemodel
         
-        def forward(self, input_ids = None, attention_mask = None, labels = None, **kwargs):
+        
+        def set_train_mode(self):
+            self.forward = self.multicol_forward
+            
+            
+        def set_generation_mode(self):
+            self.forward = self.autocol_forward
+            
+        
+        def autocol_forward(self, input_ids = None, attention_mask = None, labels = None, **kwargs):
             PAD = 50256
             EOS = 50258
             transformer, lm_head = self.children()
@@ -167,7 +176,7 @@ def MOEModelForCausalLM(model, **kwargs):
             )
             
         
-        def multicol_forward(self, input_ids = None, attention_mask = None, labels = None, **kwargs):
+        def multicol_forward(self, input_ids = None, attention_mask = None, labels = None, cols_iterator=None, **kwargs):
             # input_ids, attention_mask, labels: batch x column x tokens
             # print('labels', labels)
             PAD = 50256
@@ -178,14 +187,17 @@ def MOEModelForCausalLM(model, **kwargs):
             if labels is not None:
                 prompt = torch.cat([prompt[prompt!=PAD].unsqueeze(0), 
                                     labels[:,0,:][labels[:,0,:] != PAD].unsqueeze(0)], axis=1)
-            # print('################### NEW PASS ###################')
-            # print(prompt)
+            
+            if cols_iterator == None:
+                cols_iterator = range(self.num_experts)
+            elif len(cols_iterator.shape) == 2: # because huggingface trainor wraps cols_iterator into extra []
+                cols_iterator = cols_iterator[0]
             
             collosses = []
             lossavg = None
             # print(0, prompt)
             mask = torch.ones_like(prompt)
-            for i in range(self.num_experts):
+            for i in cols_iterator:
                 self.col.value = i
                 transformer_outputs = transformer(prompt, attention_mask=mask, **kwargs)
                 hidden_states = transformer_outputs[0]

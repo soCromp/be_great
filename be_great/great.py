@@ -30,6 +30,8 @@ from be_great.great_utils import (
     bcolors,
 )
 
+from be_great.multihead_models import MOEModelForCausalLM
+
 
 class GReaT:
     """GReaT Class
@@ -51,6 +53,7 @@ class GReaT:
         num_cols (list): List of all numerical features/columns of the tabular dataset
         conditional_col (str): Name of a feature/column on which the sampling can be conditioned
         conditional_col_dist (dict | list): Distribution of the feature/column specified by condtional_col
+        multihead (bool): Whether to use MOE
     """
 
     def __init__(
@@ -60,6 +63,7 @@ class GReaT:
         epochs: int = 100,
         batch_size: int = 8,
         efficient_finetuning: str = "",
+        multihead = False,
         **train_kwargs,
     ):
         """Initializes GReaT.
@@ -79,38 +83,38 @@ class GReaT:
         self.llm = llm
         self.tokenizer = AutoTokenizer.from_pretrained(self.llm)
         self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.model = AutoModelForCausalLM.from_pretrained(self.llm)
+        self.model = AutoModelForCausalLM.from_pretrained(self.llm, device_map='auto')
+        self.multihead = multihead
+            
 
-        if self.efficient_finetuning == "lora":
-            # Lazy importing
-            try:
-                from peft import (
-                    LoraConfig,
-                    get_peft_model,
-                    prepare_model_for_int8_training,
-                    TaskType,
-                )
-            except ImportError:
-                raise ImportError(
-                    "This function requires the 'peft' package. Please install it with - pip install peft"
-                )
+        # if self.efficient_finetuning == "lora":
+        #     # Lazy importing
+        #     try:
+        #         from peft import (
+        #             LoraConfig,
+        #             get_peft_model,
+        #             prepare_model_for_kbit_training,
+        #             TaskType,
+        #         )
+        #     except ImportError:
+        #         raise ImportError(
+        #             "This function requires the 'peft' package. Please install it with - pip install peft"
+        #         )
 
-            # Define LoRA Config
-            lora_config = LoraConfig(
-                r=16,  # only training 0.16% of the parameters of the model
-                lora_alpha=32,
-                target_modules=[
-                    "c_attn"
-                ],  # this is specific for gpt2 model, to be adapted
-                lora_dropout=0.05,
-                bias="none",
-                task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
-            )
-            # prepare int-8 model for training
-            self.model = prepare_model_for_int8_training(self.model)
-            # add LoRA adaptor
-            self.model = get_peft_model(self.model, lora_config)
-            self.model.print_trainable_parameters()
+        #     # Define LoRA Config
+        #     lora_config = LoraConfig(
+        #         r=16,  # only training 0.16% of the parameters of the model
+        #         lora_alpha=32,
+        #         target_modules='all-linear',
+        #         lora_dropout=0.05,
+        #         bias="none",
+        #         task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
+        #     )
+        #     # prepare int-8 model for training
+        #     self.model = prepare_model_for_kbit_training(self.model)
+        #     # add LoRA adaptor
+        #     self.model = get_peft_model(self.model, lora_config)
+        #     self.model.print_trainable_parameters()
 
         # Set the training hyperparameters
         self.experiment_dir = experiment_dir
@@ -148,6 +152,10 @@ class GReaT:
         df = _array_to_dataframe(data, columns=column_names)
         self._update_column_information(df)
         self._update_conditional_information(df, conditional_col)
+        
+        if(self.multihead):
+            self.model = MOEModelForCausalLM(self.model, num_experts=df.shape[1])
+            self.model.set_train_mode()
 
         # Convert DataFrame into HuggingFace dataset object
         logging.info("Convert data into HuggingFace dataset object...")
@@ -210,7 +218,7 @@ class GReaT:
         great_start = self._get_start_sampler(start_col, start_col_dist)
 
         # Move model to device
-        self.model.to(device)
+        # self.model.to(device)
 
         # Init list for generated DataFrames
         dfs = []
