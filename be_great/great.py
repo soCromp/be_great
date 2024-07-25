@@ -188,6 +188,7 @@ class GReaT:
         n_samples: int,
         start_col: tp.Optional[str] = "",
         start_col_dist: tp.Optional[tp.Union[dict, list]] = None,
+        parse: bool = True,
         temperature: float = 0.7,
         k: int = 100,
         max_length: int = 100,
@@ -228,6 +229,7 @@ class GReaT:
 
         # Start generation process
         with tqdm(total=n_samples) as pbar:
+            gen = []
             already_generated = 0
             _cnt = 0
             try:
@@ -246,40 +248,47 @@ class GReaT:
 
                     # Convert tokens back to tabular data
                     text_data = _convert_tokens_to_text(tokens, self.tokenizer)
-                    df_gen = _convert_text_to_tabular_data(text_data, self.columns)
+                    # print(text_data)
+                    
+                    if parse:
+                        df_gen = _convert_text_to_tabular_data(text_data, self.columns)
 
-                    # Remove rows where we have not generated anything
-                    df_gen = df_gen[~(df_gen == "placeholder").any(axis=1)]
+                        # Remove rows where we have not generated anything
+                        df_gen = df_gen[~(df_gen == "placeholder").any(axis=1)]
 
-                    # Remove rows where all values are NaN
-                    df_gen = df_gen.dropna(how="all")
+                        # Remove rows where all values are NaN
+                        df_gen = df_gen.dropna(how="all")
 
-                    # Optional: Remove rows with any NaN values
-                    if drop_nan:
-                        df_gen = df_gen.dropna()
+                        # Optional: Remove rows with any NaN values
+                        if drop_nan:
+                            df_gen = df_gen.dropna()
 
-                    # Remove rows with flawed numerical values but keep NaNs
-                    for i_num_cols in self.num_cols:
-                        coerced_series = pd.to_numeric(
-                            df_gen[i_num_cols], errors="coerce"
-                        )
-                        df_gen = df_gen[
-                            coerced_series.notnull() | df_gen[i_num_cols].isna()
-                        ]
+                        # Remove rows with flawed numerical values but keep NaNs
+                        for i_num_cols in self.num_cols:
+                            coerced_series = pd.to_numeric(
+                                df_gen[i_num_cols], errors="coerce"
+                            )
+                            df_gen = df_gen[
+                                coerced_series.notnull() | df_gen[i_num_cols].isna()
+                            ]
 
-                    # Convert numerical columns to float
-                    df_gen[self.num_cols] = df_gen[self.num_cols].astype(float)
+                        # Convert numerical columns to float
+                        df_gen[self.num_cols] = df_gen[self.num_cols].astype(float)
 
-                    dfs.append(df_gen)
-                    already_generated += len(dfs[-1])
+                        dfs.append(df_gen)
+                        already_generated += len(dfs[-1])
 
-                    # Update progress bar
-                    pbar.update(len(dfs[-1]))
+                        # Update progress bar
+                        pbar.update(len(dfs[-1]))
 
-                    # Check if we are actually generating synthetic samples and if not, break everything
-                    _cnt += 1
-                    if _cnt > 13 and already_generated == 0:
-                        raise Exception("Breaking the generation loop!")
+                        # Check if we are actually generating synthetic samples and if not, break everything
+                        _cnt += 1
+                        if _cnt > 13 and already_generated == 0:
+                            raise Exception("Breaking the generation loop!")
+                    else:
+                        gen.append(text_data)
+                        pbar.update(len(gen))
+                        already_generated = len(gen)
 
             except Exception as e:
                 print(f"{bcolors.FAIL}An error has occurred: {str(e)}{bcolors.ENDC}")
@@ -293,9 +302,12 @@ class GReaT:
                     f"{bcolors.OKBLUE}If the problem persists despite these adjustments, feel free to raise an issue on our GitHub page at: https://github.com/kathrinse/be_great/issues{bcolors.ENDC}"
                 )
 
-        df_gen = pd.concat(dfs)
-        df_gen = df_gen.reset_index(drop=True)
-        return df_gen.head(n_samples)
+        if parse:
+            df_gen = pd.concat(dfs)
+            df_gen = df_gen.reset_index(drop=True)
+            return df_gen.head(n_samples)
+        else:
+            return gen
 
     def great_sample(
         self,
@@ -501,7 +513,8 @@ class GReaT:
             setattr(great, k, v)
 
         # Load model weights
-        great.model.load_state_dict(torch.load(path + "/model.pt", map_location="cpu"))
+        # great.model.load_state_dict(torch.load(path + "/model.pt", map_location="cpu"))
+        great.load_finetuned_model(os.path.join(path, 'model.pt'))
 
         return great
 
