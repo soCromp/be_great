@@ -27,7 +27,7 @@ class MOEMLP(nn.Module):
         
         
     def forward(self, hidden_states):
-        print('generate with mlp', self.col.value)
+        # print('generate with mlp', self.col.value)
         return self.mlps[self.col.value](hidden_states)
 
 
@@ -81,34 +81,6 @@ class MOEMLP(nn.Module):
 def MOEModelForCausalLM(model, **kwargs):
     superclassForCausalLM = type(model)
     superclassForHeadlessLM = SUPERCLASS_FOR_HEADLESS_LM[type(model)]
-    
-    # class MOEModel(superclassForHeadlessLM):
-    #     def __init__(self, model):
-    #         super(MOEModel, self).__init__()
-            
-    #     def from_other(model):
-    #         moemodel = deepcopy(model)
-    #         moemodel.__class__ = MOEModel
-    #         moemodel.std_layers = {}
-            
-    #         if type(model) == GPT2Model:
-    #             moemodel.std_layers['pretransformer'] = ['wte', 'wpe', 'drop']
-                
-    #             moemodel.std_layers['transformer'] = 'h'
-    #             moemodel.h = nn.ModuleList([MOETransformerBlock.from_other(block) for block in model.h])
-
-    #             moemodel.std_layers['postnorm'] = 'ln_f'
-                
-    #         elif type(model) == LlamaModel:
-    #             moemodel.std_layers['pretransformer'] = ['embed_layers']
-                
-    #             moemodel.std_layers['transformer'] = 'layers'
-    #             moemodel.layers = nn.ModuleList([MOETransformerBlock.from_other(block) for block in model.layers])
-                
-    #             moemodel.std_layers['postnorm'] = 'norm'
-    #         else:
-    #             raise NotImplementedError(f'Type {type(block)} not supported')
-            
     
     class MOEModelForCausalLM(superclassForCausalLM):
         def __init__(self):

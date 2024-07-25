@@ -5,7 +5,10 @@ import torch
 from torch.utils.data import DataLoader
 
 from transformers import Trainer
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
+import os
+from be_great.multihead_models import MOEModelForCausalLM
 
 def _seed_worker(_):
     """
@@ -45,3 +48,14 @@ class GReaTTrainer(Trainer):
             pin_memory=self.args.dataloader_pin_memory,
             worker_init_fn=_seed_worker,
         )
+        
+        
+    def _save_checkpoint(self, model, trial, metrics=None):
+        super()._save_checkpoint(model, trial, metrics)
+        checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
+        run_dir = self._get_output_dir(trial=trial)
+        output_dir = os.path.join(run_dir, checkpoint_folder)
+        print(output_dir)
+        
+        if os.path.exists(output_dir):
+            torch.save(model.state_dict(), os.path.join(output_dir, 'model.pt'))

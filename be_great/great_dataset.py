@@ -38,7 +38,7 @@ class GReaTDataset(Dataset):
         random.shuffle(shuffle_idx)
         
         shuffled_text = [strings[i] for i in shuffle_idx]
-        print(shuffled_text, shuffle_idx)
+        # print(shuffled_text, shuffle_idx)
         
         tokenized_text = self.tokenizer(shuffled_text, padding=True)
         tokenized_text['cols_iterator'] = shuffle_idx
@@ -82,7 +82,7 @@ class GReaTDataCollator(DataCollatorWithPadding):
     """
 
     def __call__(self, features: tp.List[tp.Dict[str, tp.Any]]):
-        print(features)
+        # print(features)
         batch = self.tokenizer.pad(
             features,
             padding=self.padding,

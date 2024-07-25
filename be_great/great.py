@@ -153,7 +153,7 @@ class GReaT:
         self._update_column_information(df)
         self._update_conditional_information(df, conditional_col)
         
-        if(self.multihead):
+        if self.multihead:
             self.model = MOEModelForCausalLM(self.model, num_experts=df.shape[1])
             self.model.set_train_mode()
 
@@ -215,6 +215,9 @@ class GReaT:
         Returns:
             pd.DataFrame: DataFrame containing n_samples rows of generated data.
         """
+        if self.multihead:
+            self.model.set_generation_mode()
+            
         great_start = self._get_start_sampler(start_col, start_col_dist)
 
         # Move model to device
@@ -464,7 +467,13 @@ class GReaT:
         Args:
             path: Path to the fine-tuned model
         """
-        self.model.load_state_dict(torch.load(path))
+        if self.multihead:
+            sd = torch.load(path)
+            num_experts = len(set([int(k.split('.')[-3]) for k in sd.keys() if 'mlp.mlps' in k]))
+            self.model = MOEModelForCausalLM(self.model, num_experts=num_experts)
+            self.model.load_state_dict(sd)
+        else:
+            self.model.load_state_dict(torch.load(path))
 
     @classmethod
     def load_from_dir(cls, path: str):
