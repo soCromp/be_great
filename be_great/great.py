@@ -156,6 +156,9 @@ class GReaT:
         if self.multihead:
             self.model = MOEModelForCausalLM(self.model, num_experts=df.shape[1])
             self.model.set_train_mode()
+            special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
+            num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
+            self.model.resize_token_embeddings(len(self.tokenizer))
 
         # Convert DataFrame into HuggingFace dataset object
         logging.info("Convert data into HuggingFace dataset object...")
@@ -216,8 +219,6 @@ class GReaT:
         Returns:
             pd.DataFrame: DataFrame containing n_samples rows of generated data.
         """
-        if self.multihead:
-            self.model.set_generation_mode()
             
         great_start = self._get_start_sampler(start_col, start_col_dist)
 
@@ -234,6 +235,9 @@ class GReaT:
             _cnt = 0
             try:
                 while n_samples > already_generated:
+                    if self.multihead:
+                        self.model.set_generation_mode()
+                        
                     start_tokens = great_start.get_start_tokens(k)
                     start_tokens = torch.tensor(start_tokens).to(device)
 
@@ -482,8 +486,12 @@ class GReaT:
         if self.multihead:
             sd = torch.load(path)
             num_experts = len(set([int(k.split('.')[-3]) for k in sd.keys() if 'mlp.mlps' in k]))
+            print(num_experts, 'experts model')
             self.model = MOEModelForCausalLM(self.model, num_experts=num_experts)
             self.model.load_state_dict(sd)
+            special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
+            num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
+            self.model.resize_token_embeddings(len(self.tokenizer))
         else:
             self.model.load_state_dict(torch.load(path))
 

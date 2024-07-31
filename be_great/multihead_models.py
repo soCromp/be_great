@@ -115,6 +115,7 @@ def MOEModelForCausalLM(model, **kwargs):
         
         def set_train_mode(self):
             self.forward = self.multicol_forward
+            self.col.value = 0
             
             
         def set_generation_mode(self):
@@ -129,6 +130,7 @@ def MOEModelForCausalLM(model, **kwargs):
             prompt = deepcopy(input_ids) #bs x tokens
             mask = torch.ones_like(prompt)
             
+            # print('mlps col', self.col.value)
             transformer_outputs = transformer(prompt, attention_mask=mask, **kwargs)
             hidden_states = transformer_outputs[0]
             lm_logits = lm_head(hidden_states)
@@ -164,6 +166,7 @@ def MOEModelForCausalLM(model, **kwargs):
                 cols_iterator = range(self.num_experts)
             elif len(cols_iterator.shape) == 2: # because huggingface trainor wraps cols_iterator into extra []
                 cols_iterator = cols_iterator[0]
+            # print(cols_iterator)
             
             collosses = []
             lossavg = None
