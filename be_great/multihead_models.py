@@ -409,6 +409,35 @@ def MOEModelForCausalLM(model, **kwargs):
 
                 # choose next tokens (sample/argmax)
                 next_tokens = select_next_token(next_token_scores)
+                if input_ids[..., -1].item() == EOS and expert < self.num_experts-1:
+                    next_tokens = torch.full_like(next_tokens, self.column_names_tokens[expert][0])
+                    expert += 1
+                    self.col.value = self.token_heads[expert]
+                    
+                # if next_tokens.item() == EOS and expert < self.num_experts-1:
+                #     expert += 1
+                #     self.col.value = self.token_heads[expert]
+                #     for token in self.column_names_tokens[expert]:
+                #         print(token)
+                #         model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
+                #         outputs = self(
+                #             **model_inputs,
+                #             return_dict=True,
+                #             output_attentions=output_attentions,
+                #             output_hidden_states=output_hidden_states,
+                #         )
+                #         next_token_logits = outputs.logits[:, -1, :]
+                #         # pre-process distribution
+                #         # next_token_scores = get_next_token_scores(input_ids, next_token_logits, logits_processor, logits_warper)
+                #         next_tokens = torch.full_like(next_tokens, token)
+                #         print('before', input_ids.shape)
+                #         input_ids = torch.cat([input_ids, next_tokens[:, None]], dim=-1)
+                #         print('after', input_ids.shape)
+                #         model_kwargs = self._update_model_kwargs_for_generation(
+                #             outputs,
+                #             model_kwargs,
+                #             is_encoder_decoder=self.config.is_encoder_decoder,
+                #         )
 
                 # finished sentences should have their next token be a padding token
                 if eos_token_id is not None:
@@ -434,32 +463,6 @@ def MOEModelForCausalLM(model, **kwargs):
 
                 unfinished_sequences = unfinished_sequences & ~stopping_criteria(input_ids, scores)
                 this_peer_finished = unfinished_sequences.max() == 0
-                
-                
-                if next_tokens.item() == EOS and expert < self.num_experts-1:
-                    expert += 1
-                    self.col.value = self.token_heads[expert]
-                    for token in self.column_names_tokens[expert]:
-                        print(token)
-                        model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
-                        outputs = self(
-                            **model_inputs,
-                            return_dict=True,
-                            output_attentions=output_attentions,
-                            output_hidden_states=output_hidden_states,
-                        )
-                        next_token_logits = outputs.logits[:, -1, :]
-                        # pre-process distribution
-                        # next_token_scores = get_next_token_scores(input_ids, next_token_logits, logits_processor, logits_warper)
-                        next_tokens = torch.full_like(next_tokens, token)
-                        print('before', input_ids.shape)
-                        input_ids = torch.cat([input_ids, next_tokens[:, None]], dim=-1)
-                        print('after', input_ids.shape)
-                        model_kwargs = self._update_model_kwargs_for_generation(
-                            outputs,
-                            model_kwargs,
-                            is_encoder_decoder=self.config.is_encoder_decoder,
-                        )
 
             if streamer is not None:
                 streamer.end()
