@@ -221,6 +221,13 @@ class GReaT:
         """
             
         great_start = self._get_start_sampler(start_col, start_col_dist)
+        if self.multihead:
+            conditional_ind = self.columns.index(self.conditional_col)
+            expert_indices = [conditional_ind] + list(range(conditional_ind)) +\
+                list(range(conditional_ind+1, len(self.columns)))
+            assert len(expert_indices) == len(self.columns) and set(expert_indices) == set(list(range(len(self.columns))))
+            column_names_tokens = self.tokenizer(self.columns).input_ids
+            self.model.set_generation_mode(expert_indices, column_names_tokens)
 
         # Move model to device
         # self.model.to(device)
@@ -233,78 +240,78 @@ class GReaT:
             gen = []
             already_generated = 0
             _cnt = 0
-            try:
-                while n_samples > already_generated:
-                    if self.multihead:
-                        self.model.set_generation_mode()
-                        
-                    start_tokens = great_start.get_start_tokens(k)
-                    start_tokens = torch.tensor(start_tokens).to(device)
-
-                    # Generate tokens
-                    tokens = self.model.generate(
-                        input_ids=start_tokens,
-                        max_length=max_length,
-                        do_sample=True,
-                        temperature=temperature,
-                        pad_token_id=50256,
-                    )
-
-                    # Convert tokens back to tabular data
-                    text_data = _convert_tokens_to_text(tokens, self.tokenizer)
-                    # print(text_data)
+            # try:
+            while n_samples > already_generated:
+                # if self.multihead:
+                #     self.model.set_generation_mode(self.columns)
                     
-                    if parse:
-                        df_gen = _convert_text_to_tabular_data(text_data, self.columns)
+                start_tokens = great_start.get_start_tokens(k)
+                start_tokens = torch.tensor(start_tokens).to(device)
 
-                        # Remove rows where we have not generated anything
-                        df_gen = df_gen[~(df_gen == "placeholder").any(axis=1)]
-
-                        # Remove rows where all values are NaN
-                        df_gen = df_gen.dropna(how="all")
-
-                        # Optional: Remove rows with any NaN values
-                        if drop_nan:
-                            df_gen = df_gen.dropna()
-
-                        # Remove rows with flawed numerical values but keep NaNs
-                        for i_num_cols in self.num_cols:
-                            coerced_series = pd.to_numeric(
-                                df_gen[i_num_cols], errors="coerce"
-                            )
-                            df_gen = df_gen[
-                                coerced_series.notnull() | df_gen[i_num_cols].isna()
-                            ]
-
-                        # Convert numerical columns to float
-                        df_gen[self.num_cols] = df_gen[self.num_cols].astype(float)
-
-                        dfs.append(df_gen)
-                        already_generated += len(dfs[-1])
-
-                        # Update progress bar
-                        pbar.update(len(dfs[-1]))
-
-                        # Check if we are actually generating synthetic samples and if not, break everything
-                        _cnt += 1
-                        if _cnt > 13 and already_generated == 0:
-                            raise Exception("Breaking the generation loop!")
-                    else:
-                        gen.append(text_data)
-                        pbar.update(len(gen))
-                        already_generated = len(gen)
-
-            except Exception as e:
-                print(f"{bcolors.FAIL}An error has occurred: {str(e)}{bcolors.ENDC}")
-                print(
-                    f"{bcolors.WARNING}To address this issue, consider fine-tuning the GReaT model for an longer period. This can be achieved by increasing the number of epochs.{bcolors.ENDC}"
+                # Generate tokens
+                tokens = self.model.generate(
+                    input_ids=start_tokens,
+                    max_length=max_length,
+                    do_sample=True,
+                    temperature=temperature,
+                    pad_token_id=50256,
                 )
-                print(
-                    f"{bcolors.WARNING}Alternatively, you might consider increasing the max_length parameter within the sample function. For example: model.sample(n_samples=10, max_length=2000){bcolors.ENDC}"
-                )
-                print(
-                    f"{bcolors.OKBLUE}If the problem persists despite these adjustments, feel free to raise an issue on our GitHub page at: https://github.com/kathrinse/be_great/issues{bcolors.ENDC}"
-                )
+
+                # Convert tokens back to tabular data
+                text_data = _convert_tokens_to_text(tokens, self.tokenizer)
+                # print(text_data)
+                
+                if parse:
+                    df_gen = _convert_text_to_tabular_data(text_data, self.columns)
+
+                    # Remove rows where we have not generated anything
+                    df_gen = df_gen[~(df_gen == "placeholder").any(axis=1)]
+
+                    # Remove rows where all values are NaN
+                    df_gen = df_gen.dropna(how="all")
+
+                    # Optional: Remove rows with any NaN values
+                    if drop_nan:
+                        df_gen = df_gen.dropna()
+
+                    # Remove rows with flawed numerical values but keep NaNs
+                    for i_num_cols in self.num_cols:
+                        coerced_series = pd.to_numeric(
+                            df_gen[i_num_cols], errors="coerce"
+                        )
+                        df_gen = df_gen[
+                            coerced_series.notnull() | df_gen[i_num_cols].isna()
+                        ]
+
+                    # Convert numerical columns to float
+                    df_gen[self.num_cols] = df_gen[self.num_cols].astype(float)
+
+                    dfs.append(df_gen)
+                    already_generated += len(dfs[-1])
+
+                    # Update progress bar
+                    pbar.update(len(dfs[-1]))
+
+                    # Check if we are actually generating synthetic samples and if not, break everything
+                    _cnt += 1
+                    if _cnt > 13 and already_generated == 0:
+                        raise Exception("Breaking the generation loop!")
+                else:
+                    gen.append(text_data)
+                    pbar.update(len(gen))
+                    already_generated = len(gen)
+
+            # except Exception as e:
+            #     print(f"{bcolors.FAIL}An error has occurred: {str(e)}{bcolors.ENDC}")
+            #     print(
+            #         f"{bcolors.WARNING}To address this issue, consider fine-tuning the GReaT model for an longer period. This can be achieved by increasing the number of epochs.{bcolors.ENDC}"
+            #     )
+            #     print(
+            #         f"{bcolors.WARNING}Alternatively, you might consider increasing the max_length parameter within the sample function. For example: model.sample(n_samples=10, max_length=2000){bcolors.ENDC}"
+            #     )
+            #     print(
+            #         f"{bcolors.OKBLUE}If the problem persists despite these adjustments, feel free to raise an issue on our GitHub page at: https://github.com/kathrinse/be_great/issues{bcolors.ENDC}"
+            #     )
 
         if parse:
             df_gen = pd.concat(dfs)
@@ -488,10 +495,10 @@ class GReaT:
             num_experts = len(set([int(k.split('.')[-3]) for k in sd.keys() if 'mlp.mlps' in k]))
             print(num_experts, 'experts model')
             self.model = MOEModelForCausalLM(self.model, num_experts=num_experts)
-            self.model.load_state_dict(sd)
             special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
             num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
             self.model.resize_token_embeddings(len(self.tokenizer))
+            self.model.load_state_dict(sd)
         else:
             self.model.load_state_dict(torch.load(path))
 
